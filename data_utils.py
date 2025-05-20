@@ -139,6 +139,45 @@ def load_annotations(xml_dir, xml_files, cache_dir=None):
     
     return annotations
 
+# XML에서 객체 정보 추출 (내부용 유틸리티 함수)
+def __extract_object_from_xml__(obj, width=0, height=0):
+    """XML의 object 요소에서 객체 정보(이름, 바운딩 박스)를 추출
+    
+    Args:
+        obj: XML의 object 요소
+        width: 이미지 너비 (0이면 범위 검사 안함)
+        height: 이미지 높이 (0이면 범위 검사 안함)
+    
+    Returns:
+        dict: 객체 이름과 바운딩 박스 정보를 포함하는 사전, 실패 시 None
+    """
+    try:
+        obj_name = obj.find('name').text
+        bbox = obj.find('bndbox')
+        
+        x_min = int(float(bbox.find('xmin').text))
+        y_min = int(float(bbox.find('ymin').text))
+        x_max = int(float(bbox.find('xmax').text))
+        y_max = int(float(bbox.find('ymax').text))
+        
+        # 경계 상자가 이미지 크기를 벗어나지 않도록 조정 (0 이상, 이미지 크기 이하)
+        if width > 0 and height > 0:
+            x_min = max(0, min(x_min, width))
+            y_min = max(0, min(y_min, height))
+            x_max = max(0, min(x_max, width))
+            y_max = max(0, min(y_max, height))
+        
+        # 유효한 영역인지 확인 (최소한 1픽셀 이상의 너비와 높이)
+        if x_max > x_min and y_max > y_min:
+            return {
+                'name': obj_name,
+                'bbox': [x_min, y_min, x_max, y_max]
+            }
+        else:
+            return None
+    except (AttributeError, ValueError) as e:
+        return None
+
 # XML 파싱 (내부용 함수)
 def __parse_xml__(xml_dir, xml_files):
     """ XML 구조
@@ -150,149 +189,157 @@ def __parse_xml__(xml_dir, xml_files):
             annotation: OXIIIT
             image: flickr
         size: None
-            width: 600
-            height: 400
+            width: 800
+            height: 419
             depth: 3
         segmented: 0
         object: None
-            name: cat
+            name: Abyssinian
             pose: Frontal
             truncated: 0
-            occluded: 0
-            bndbox: None
-                xmin: 333
-                ymin: 72
-                xmax: 425
-                ymax: 158
             difficult: 0
-    
-    Args:
-        xml_dir: XML 파일이 있는 디렉토리 경로
-        xml_files: 처리할 XML 파일 리스트
-    
-    Returns:
-        list: 애노테이션 리스트 (이미지 이름, 클래스, 바운딩 박스 정보)
+            bndbox: None
+                xmin: 106
+                ymin: 27
+                xmax: 688
+                ymax: 348
     """
     annotations = []
-    invalid_files = []
-    no_objects_files = []
-    invalid_objects = []
-    
-    total_files = len(xml_files)
-    processed_files = 0
-    
-    logger.info(f"XML 파일 {total_files}개 파싱 시작")
-    
-    # 각 XML 파일에 대해 파싱 시도
     for xml_file in xml_files:
+        xml_path = os.path.join(xml_dir, xml_file)
+        
         try:
-            xml_path = os.path.join(xml_dir, xml_file)
+            tree = ET.parse(xml_path)
+            root = tree.getroot()
             
-            # XML 파일 파싱 시도
+            # 파일명 추출
             try:
-                tree = ET.parse(xml_path)
-                root = tree.getroot()
-            except Exception as e:
-                logger.error(f"XML 파일 파싱 오류 ({xml_file}): {e}")
-                invalid_files.append(xml_file)
-                continue
+                filename = root.find('filename').text
+            except (AttributeError, ValueError) as e:
+                logger.warning(f"파일명 요소 누락 또는 오류 (파일: {xml_file}): {e}")
+                filename = xml_file.replace('.xml', '.jpg')  # 기본값으로 XML 파일명 사용
             
-            # 파일이름 필드 확인
-            filename_elem = root.find("filename")
-            if filename_elem is None or not filename_elem.text:
-                logger.warning(f"XML 파일에 filename 요소가 없음: {xml_file}")
-                image_name = os.path.splitext(xml_file)[0] + ".jpg"  # 기본값 사용
-            else:
-                image_name = filename_elem.text
+            # 크기 정보 추출
+            try:
+                size = root.find('size')
+                width = int(size.find('width').text)
+                height = int(size.find('height').text)
+            except (AttributeError, ValueError) as e:
+                logger.warning(f"크기 정보 요소 누락 또는 오류 (파일: {xml_file}): {e}")
+                width, height = 0, 0  # 기본값
             
-            # object 요소들 확인
-            objects = root.findall("object")
-            if not objects:
-                logger.warning(f"XML 파일에 object 요소가 없음: {xml_file}")
-                no_objects_files.append(xml_file)
-                continue
+            # 객체 정보 추출
+            objects = []
+            for obj in root.findall('object'):
+                object_info = __extract_object_from_xml__(obj, width, height)
+                if object_info:
+                    objects.append(object_info)
+                else:
+                    logger.warning(f"객체 정보 추출 오류 (파일: {xml_file})")
             
-            # 각 객체 파싱
-            for obj_index, obj in enumerate(objects):
-                try:
-                    # 클래스 이름 확인
-                    name_elem = obj.find("name")
-                    if name_elem is None or not name_elem.text:
-                        logger.warning(f"object에 name 요소가 없음: {xml_file}, object #{obj_index+1}")
-                        class_name = "unknown"  # 기본값 사용
-                    else:
-                        class_name = name_elem.text
-                    
-                    # 바운딩 박스 확인
-                    bndbox = obj.find("bndbox")
-                    if bndbox is None:
-                        logger.warning(f"object에 bndbox 요소가 없음: {xml_file}, object #{obj_index+1}")
-                        invalid_objects.append((xml_file, obj_index+1, "no_bndbox"))
-                        continue
-                    
-                    # 바운딩 박스 좌표 파싱
-                    try:
-                        x_min = int(float(bndbox.find("xmin").text))
-                        y_min = int(float(bndbox.find("ymin").text))
-                        x_max = int(float(bndbox.find("xmax").text))
-                        y_max = int(float(bndbox.find("ymax").text))
-                        
-                        # 바운딩 박스 유효성 확인
-                        if x_min >= x_max or y_min >= y_max:
-                            logger.warning(f"잘못된 바운딩 박스: {xml_file}, object #{obj_index+1}, bbox: [{x_min}, {y_min}, {x_max}, {y_max}]")
-                            invalid_objects.append((xml_file, obj_index+1, "invalid_bbox_values"))
-                            continue
-                        
-                        if x_min < 0 or y_min < 0:
-                            logger.warning(f"부적절한 바운딩 박스 좌표: {xml_file}, object #{obj_index+1}, bbox: [{x_min}, {y_min}, {x_max}, {y_max}]")
-                            # 좌표를 0으로 보정
-                            x_min = max(0, x_min)
-                            y_min = max(0, y_min)
-                    
-                    except (AttributeError, ValueError) as e:
-                        logger.error(f"바운딩 박스 좌표 파싱 오류: {xml_file}, object #{obj_index+1}: {e}")
-                        invalid_objects.append((xml_file, obj_index+1, "bbox_parsing_error"))
-                        continue
-                    
-                    # 애노테이션 추가
-                    annotations.append({
-                        "image": image_name,
-                        "class": class_name,
-                        "bbox": [x_min, y_min, x_max, y_max]
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"object 파싱 오류: {xml_file}, object #{obj_index+1}: {e}")
-                    invalid_objects.append((xml_file, obj_index+1, str(e)))
+            # 어노테이션 정보 저장
+            annotation = {
+                'filename': filename,
+                'width': width,
+                'height': height,
+                'objects': objects
+            }
             
-            processed_files += 1
-            if processed_files % 100 == 0:
-                logger.info(f"XML 파일 파싱 진행중: {processed_files}/{total_files} ({processed_files/total_files*100:.1f}%)")
-                
+            annotations.append(annotation)
+
         except Exception as e:
-            logger.error(f"XML 파일 처리 중 오류 발생: {xml_file}: {e}")
-            invalid_files.append(xml_file)
+            logger.warning(f"XML 파일 파싱 오류 (파일: {xml_file}): {e}")
+            continue
     
-    # 파싱 결과 요약 출력
-    logger.info(f"XML 파일 파싱 완료: 총 {total_files}개 중 {processed_files}개 처리")
-    logger.info(f"총 {len(annotations)}개의 애노테이션 완료")
-    
-    if invalid_files:
-        logger.warning(f"파싱할 수 없는 XML 파일: {len(invalid_files)}개")
-        logger.warning(f"[처음 10개만 표시] {invalid_files[:10]}")
-    
-    if no_objects_files:
-        logger.warning(f"object 요소가 없는 XML 파일: {len(no_objects_files)}개")
-        logger.warning(f"[처음 10개만 표시] {no_objects_files[:10]}")
-    
-    if invalid_objects:
-        logger.warning(f"유효하지 않은 객체: {len(invalid_objects)}개")
-        logger.warning(f"[처음 10개만 표시] {invalid_objects[:10]}")
+    logger.info(f"XML 파일 파싱 완료: 총 {len(xml_files)}개 중 {len(annotations)}개 처리")
     
     return annotations
 
-"""
-# 이 코드는 visualization.py로 이동하였습니다.
-# 애노테이션 이미지 시각화는 visualization.py의 visualize_annotated_image 함수를 사용하세요.
-"""
-    
+
+
+def __transform_image__(dtype=torch.float32, scale=True):
+    transform = v2.Compose(
+        [
+            v2.ToImage(),
+            v2.ToDtype(dtype=dtype, scale=scale),
+        ]
+    )
+
+    return transform
+
+
+
+class VOCDataset(Dataset):
+    def __init__(self, image_dir, annotation_dir, classes, image_list, transforms=__transform_image__, image_format=".jpg", annotation_format=".xml", color_mode="RGB"):
+        self.image_dir = image_dir
+        self.annotation_dir = annotation_dir
+        self.classes = classes
+        self.transforms = transforms
+        self.image_files = image_list # 미리 필터링된 유효한 이미지 파일 리스트
+        self.image_format = image_format
+        self.annotation_format = annotation_format
+        self.color_mode = color_mode
+
+    def __len__(self):
+        return len(self.image_files)
+
+    def __getitem__(self, idx):
+        # 이미지 및 XML 파일 경로 설정
+        image_file = self.image_files[idx] + self.image_format
+        annotation_file = self.image_files[idx] + self.annotation_format
+        image_path = os.path.join(self.image_dir, image_file)
+        annotation_path = os.path.join(self.annotation_dir, annotation_file)
+
+        # 이미지 로드
+        image = Image.open(image_path).convert(self.color_mode)
+
+        # 어노테이션 로드
+        boxes = []
+        labels = []
+        tree = ET.parse(annotation_path)
+        root = tree.getroot()
+        
+        # 이미지 크기 추출 (바운딩 박스 검증에 사용)
+        try:
+            size = root.find('size')
+            width = int(size.find('width').text)
+            height = int(size.find('height').text)
+        except (AttributeError, ValueError):
+            # 이미지에서 크기 추출
+            width, height = image.size
+
+        # 공통 추출 함수를 사용하여 객체 정보 추출
+        for obj in root.findall("object"):
+            object_info = __extract_object_from_xml__(obj, width, height)
+            if object_info and object_info['name'] in self.classes:
+                class_name = object_info['name']
+                labels.append(self.classes.index(class_name))
+                boxes.append(object_info['bbox'])
+
+        # Tensor로 변환
+        boxes = torch.tensor(boxes, dtype=torch.float32)
+        labels = torch.tensor(labels, dtype=torch.int64)
+
+        # Transform 적용
+        if self.transforms:
+            image, boxes, labels = self.transforms(image, boxes, labels)
+
+        target = {"boxes": boxes, "labels": labels}
+        return image, target
+
+
+def create_dataset(
+    image_dir, 
+    annotation_dir, 
+    classes, 
+    image_list, 
+    transforms=__transform_image__, 
+    image_format=".jpg", 
+    annotation_format=".xml", 
+    color_mode="RGB"
+):
+    dataset = VOCDataset(image_dir, annotation_dir, classes, image_list, transforms=transforms, image_format=image_format, annotation_format=annotation_format, color_mode=color_mode)
+    return dataset
+
+
+

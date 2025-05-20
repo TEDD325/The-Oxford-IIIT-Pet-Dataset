@@ -62,7 +62,40 @@ def main():
     visualize_annotated_image(df_trainval, annotations, IMAGE_DIR, species=2)
     
     
+    # Train/Validation 분리 (trainval_list에서 80% Train, 20% Validation으로 나눔)
+    train_set, valid_set = train_test_split(trainval_list, test_size=0.3, random_state=42)
 
+    # Train Dataset
+    train_dataset = create_dataset(
+        image_dir=IMAGE_DIR, 
+        annotation_dir=XML_DIR, 
+        classes=["background", "dog", "cat"], 
+        image_list=train_set)
+
+    # Validation Dataset
+    valid_dataset = create_dataset(
+        image_dir=IMAGE_DIR, 
+        annotation_dir=XML_DIR, 
+        classes=["background", "dog", "cat"], 
+        image_list=valid_set)
+
+    # # Test Dataset
+    # test_dataset = create_dataset(
+    #     image_dir=IMAGE_DIR, 
+    #     annotation_dir=XML_DIR, 
+    #     classes=["background", "dog", "cat"], 
+    #     image_list=test_set)
+
+
+    # 데이터 로더 생성
+    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+    valid_loader = DataLoader(valid_dataset, batch_size=4, shuffle=False)
+    # test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
+
+    # 데이터 크기 출력
+    print(f"Train 데이터셋 크기: {len(train_dataset)}")
+    print(f"Validation 데이터셋 크기: {len(valid_dataset)}")
+    # print(f"Test 데이터셋 크기: {len(test_dataset)}")
 
 
 if __name__ == "__main__":
