@@ -318,7 +318,14 @@ class VOCDataset(Dataset):
 
         # Tensor로 변환
         boxes = torch.tensor(boxes, dtype=torch.float32)
-        labels = torch.tensor(labels, dtype=torch.int64)
+        labels = torch.tensor(labels, dtype=torch.int64) # TODO: int32 타입으로 한 번 시도해보고 런타임 오류가 뜨는지 직접 확인해 볼 필요가 있다.
+        """
+            Q. labels = torch.tensor(labels, dtype=torch.int64)에서 dtype=torch.int64이어야 하는 이유는?
+            A.
+                1. int64 타입만 써야 하는 것은 아니지만, PyTorch 생태계 내에서 호환성을 위해 일반적으로 이 타입을 사용한다. 
+                2. nn.CrossEntropyLoss와 같은 분류 손실 함수는 기본적으로 torch.int64 타입의 라벨을 기대한다. 다른 타입으로 지정하면 런타임 오류가 발생할 수 있다.
+                3. 메모리 사용량이 매우 중요한 대규모 데이터셋의 경우 때로는 torch.int32와 같은 작은 타입을 사용할 수도 있지만, 그럴 경우 다른 함수들과 호환되도록 명시적인 타입 변환이 필요할 수 있다.
+        """
 
         # Transform 적용
         if self.transforms:
