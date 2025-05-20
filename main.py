@@ -44,7 +44,8 @@ def main():
     trainval_xml_list, trainval_list, missing_trainval_xml = check_exist_format(trainval_list, XML_DIR)
     
     # Test 이미지에 대해 XML 파일이 있는지 확인
-    test_xml_list, test_list, missing_test_xml = check_exist_format(test_list, XML_DIR)
+    test_xml_list, _, missing_test_xml = check_exist_format(test_list, XML_DIR)
+    ''' Test 셋에는 XML 파일이 없는 것이 당연 '''
     
     # XML 파일 이름 리스트 추출
     extracted_xml_files_list = extract_xml_files(annotation_file_format=".xml")
@@ -62,40 +63,31 @@ def main():
     visualize_annotated_image(df_trainval, annotations, IMAGE_DIR, species=2)
     
     
-    # Train/Validation 분리 (trainval_list에서 80% Train, 20% Validation으로 나눔)
-    train_set, valid_set = train_test_split(trainval_list, test_size=0.3, random_state=42)
+    # 클래스 정보 정의
+    classes = ["background", "dog", "cat"]
 
-    # Train Dataset
-    train_dataset = create_dataset(
-        image_dir=IMAGE_DIR, 
-        annotation_dir=XML_DIR, 
-        classes=["background", "dog", "cat"], 
-        image_list=train_set)
+    # dataset_utils에서 추가한 함수를 활용하여 데이터셋 생성
+    from dataset_utils import create_datasets, create_dataloaders
+    
+    # 학습, 검증, 테스트 데이터셋 생성 
+    train_dataset, valid_dataset, test_dataset = create_datasets(
+        image_dir=IMAGE_DIR,
+        trainval_list=trainval_list,
+        test_list=test_list,
+        xml_dir=XML_DIR,
+        classes=classes,
+        valid_size=0.3,
+        random_state=42
+    )
 
-    # Validation Dataset
-    valid_dataset = create_dataset(
-        image_dir=IMAGE_DIR, 
-        annotation_dir=XML_DIR, 
-        classes=["background", "dog", "cat"], 
-        image_list=valid_set)
+    # 데이터로더 생성 
+    train_loader, valid_loader, test_loader = create_dataloaders(
+        train_dataset=train_dataset,
+        valid_dataset=valid_dataset,
+        test_dataset=test_dataset,
+        batch_size=8
+    )
 
-    # # Test Dataset
-    # test_dataset = create_dataset(
-    #     image_dir=IMAGE_DIR, 
-    #     annotation_dir=XML_DIR, 
-    #     classes=["background", "dog", "cat"], 
-    #     image_list=test_set)
-
-
-    # 데이터 로더 생성
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-    valid_loader = DataLoader(valid_dataset, batch_size=4, shuffle=False)
-    # test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
-
-    # 데이터 크기 출력
-    print(f"Train 데이터셋 크기: {len(train_dataset)}")
-    print(f"Validation 데이터셋 크기: {len(valid_dataset)}")
-    # print(f"Test 데이터셋 크기: {len(test_dataset)}")
 
 
 if __name__ == "__main__":

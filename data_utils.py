@@ -33,10 +33,6 @@ def print_data_size_info(df_trainval, df_test, annotation_file_format):
     logger.info(f"훈련/검증 데이터 수: {len(df_trainval)}")
     logger.info(f"테스트 데이터 수: {len(df_test)}")
 
-    # Annotation 개수 확인
-    # xml_files = [file for file in os.listdir(XML_DIR) if file.endswith(annotation_file_format)]
-    # logger.info(f"XML 파일 개수: {len(xml_files)}")
-
 def analyze_class_distribution(df_trainval, df_test, column):
     """클래스 불균형 분석"""
     logger.info("클래스 불균형 확인:")
@@ -269,8 +265,39 @@ def __transform_image__(dtype=torch.float32, scale=True):
 
 
 
-class VOCDataset(Dataset):
-    def __init__(self, image_dir, annotation_dir, classes, image_list, transforms=__transform_image__, image_format=".jpg", annotation_format=".xml", color_mode="RGB"):
+class TestDataset(Dataset):
+    def __init__(self, image_dir, image_list, transforms=None, image_format=".jpg", color_mode="RGB"):
+        self.image_dir = image_dir
+        self.transforms = transforms
+        self.image_files = image_list  # 테스트 이미지 리스트 (확장자 없음)
+        self.image_format = image_format
+        self.color_mode = color_mode
+
+    def __len__(self):
+        return len(self.image_files)
+
+    def __getitem__(self, idx):
+        # 이미지 파일 경로
+        image_file = self.image_files[idx] + self.image_format
+        image_path = os.path.join(self.image_dir, image_file)
+
+        # 이미지 로드
+        image = Image.open(image_path).convert(self.color_mode)
+
+        # Transform 적용
+        if self.transforms:
+            image = self.transforms(image)
+
+        return image, self.image_files[idx]  # 이미지와 파일 이름 반환
+
+    """
+        Q. 테스트 데이터셋을 별도로 생성하는 이유?
+        A. 테스트 데이터셋은 추론 시에 사용되므로 레이블 정보가 없을 수 있다.
+    """
+
+
+class AnnotatedImageDataset(Dataset):
+    def __init__(self, image_dir, annotation_dir, classes, image_list, transforms=None, image_format=".jpg", annotation_format=".xml", color_mode="RGB"):
         self.image_dir = image_dir
         self.annotation_dir = annotation_dir
         self.classes = classes
@@ -336,17 +363,66 @@ class VOCDataset(Dataset):
 
 
 def create_dataset(
-    image_dir, 
-    annotation_dir, 
-    classes, 
-    image_list, 
-    transforms=__transform_image__, 
-    image_format=".jpg", 
-    annotation_format=".xml", 
+    image_dir,
+    image_list,
+    dataset_type="train",
+    annotation_dir=None,
+    classes=None,
+    apply_transforms=True,
+    image_format=".jpg",
+    annotation_format=".xml",
     color_mode="RGB"
 ):
-    dataset = VOCDataset(image_dir, annotation_dir, classes, image_list, transforms=transforms, image_format=image_format, annotation_format=annotation_format, color_mode=color_mode)
+    """
+    정해진 파라미터를 기반으로 트레이닝/검증 또는 테스트 데이터셋을 생성합니다.
+    
+    Args:
+        image_dir: 이미지 파일이 저장된 디렉토리
+        image_list: 이미지 파일 리스트 (확장자 없음)
+        dataset_type: 데이터셋 유형, 'train' 또는 'test'
+        annotation_dir: XML 파일이 저장된 디렉토리 (dataset_type='train'인 경우만 필요)
+        classes: 클래스 이름 리스트 (dataset_type='train'인 경우만 필요)
+        apply_transforms: 이미지 변환 함수 적용 여부
+        image_format: 이미지 파일 확장자
+        annotation_format: XML 파일 확장자
+        color_mode: 이미지 색상 모드
+    
+    Returns:
+        Dataset: VOCDataset 또는 TestDataset 인스턴스
+    """
+
+    if apply_transforms:
+        transforms = __transform_image__()
+    else:
+        transforms = None
+    
+    # 데이터셋 유형에 따라 다른 클래스 사용
+    if dataset_type.lower() == "train" or dataset_type.lower() == "val" or dataset_type.lower() == "valid":
+        # 어노테이션과 클래스 정보가 있는지 확인
+        if annotation_dir is None or classes is None:
+            raise ValueError("Train/Validation 데이터셋은 annotation_dir와 classes가 필요합니다.")
+        
+        # AnnotatedImageDataset 생성
+        dataset = AnnotatedImageDataset(
+            image_dir=image_dir,
+            annotation_dir=annotation_dir,
+            classes=classes,
+            image_list=image_list,
+            transforms=transforms,
+            image_format=image_format,
+            annotation_format=annotation_format,
+            color_mode=color_mode
+        )
+    elif dataset_type.lower() == "test":
+        # TestDataset 생성
+        dataset = TestDataset(
+            image_dir=image_dir,
+            image_list=image_list,
+            transforms=transforms,
+            image_format=image_format,
+            color_mode=color_mode
+        )
+    else:
+        raise ValueError(f"지원되지 않는 dataset_type: {dataset_type}. 'train', 'val' 또는 'test'를 사용하세요.")
+    
     return dataset
-
-
-
