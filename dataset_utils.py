@@ -10,6 +10,7 @@ logger = get_logger()
 def create_datasets(image_dir, trainval_list, test_list, xml_dir, classes, valid_size=0.3, random_state=42):
     """
     학습, 검증, 테스트 데이터셋을 한 번에 생성합니다.
+    클래스 불균형을 고려한 층화 샘플링(stratified sampling)을 수행합니다.
     
     Args:
         image_dir: 이미지 파일이 저장된 디렉토리 경로
@@ -23,12 +24,25 @@ def create_datasets(image_dir, trainval_list, test_list, xml_dir, classes, valid
     Returns:
         tuple: (train_dataset, valid_dataset, test_dataset) 형태의 데이터셋 튜플
     """
-    # 학습/검증 데이터 분리
-    train_set, valid_set = train_test_split(
-        trainval_list, 
-        test_size=valid_size, 
-        random_state=random_state
-    )
+    # trainval_list가 단순 리스트인지 데이터프레임인지 확인
+    
+    if isinstance(trainval_list, pd.DataFrame):
+        # 이미 데이터프레임인 경우, Species 열을 stratify로 사용
+        stratify_values = trainval_list['Species'] if 'Species' in trainval_list.columns else None
+        train_set, valid_set = train_test_split(
+            trainval_list, 
+            test_size=valid_size, 
+            random_state=random_state,
+            stratify=stratify_values
+        )
+    else:
+        # 단순 리스트인 경우 stratify 없이 분할
+        logger.warning("trainval_list가 데이터프레임이 아니어서 stratify 없이 train_test_split 수행")
+        train_set, valid_set = train_test_split(
+            trainval_list, 
+            test_size=valid_size, 
+            random_state=random_state
+        )
     
     # 학습 데이터셋 생성
     train_dataset = create_dataset(

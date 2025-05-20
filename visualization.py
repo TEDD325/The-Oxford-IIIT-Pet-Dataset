@@ -7,6 +7,12 @@ from config import *
 # 로거 가져오기
 logger = get_logger()
 
+# 각 클래스에 대한 색상 매핑
+CLASS_COLORS = {
+    1: (0, 255, 0),  # 고양이 - 초록색
+    2: (255, 0, 0)   # 개 - 빨강색
+}
+
 def visualize_class_distribution(df_trainval, df_test, save_dir=None):
     """훈련/검증 및 테스트 데이터셋의 클래스 분포를 시각화합니다.
     
@@ -238,3 +244,84 @@ def visualize_sample_images(df_trainval, image_dir, save_dir=None):
         plt.tight_layout()
         plt.show()
         return None
+
+
+def visualize_predictions(images, predictions, classes, save_dir=None, score_threshold=0.5, max_images=5):
+    """
+    모델의 예측 결과를 시각화하고 저장합니다.
+    
+    Args:
+        images: 원본 이미지 리스트 (텐서 형식)
+        predictions: 모델 예측 결과 리스트 (각 예측은 boxes, scores, labels를 포함)
+        classes: 클래스 이름 리스트 (["background", "dog", "cat"] 등)
+        save_dir: 저장할 디렉토리 (기본값: None)
+        score_threshold: 객체 검출 임계값 (기본값: 0.5)
+        max_images: 저장할 최대 이미지 수 (기본값: 5)
+    
+    Returns:
+        list: 저장된 이미지 파일 경로 리스트
+    """
+    try:
+        # 결과물 저장 디렉토리 설정
+        save_dir = create_results_directories(save_dir, 'predictions')
+        
+        # 타임스탬프
+        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        
+        # 보여줄 이미지 수 제한
+        num_images = min(len(images), max_images)
+        saved_files = []
+        
+        for i in range(num_images):
+            # 원본 이미지를 numpy 배열로 변환
+            image = images[i].permute(1, 2, 0).cpu().numpy()  # (C, H, W) -> (H, W, C)
+            image = (image * 255).astype(np.uint8)  # [0,1] -> [0,255]
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # RGB -> BGR (OpenCV용)
+            
+            # 현재 이미지에 대한 예측 가져오기
+            pred = predictions[i]
+            boxes = pred['boxes'].cpu().numpy()
+            scores = pred['scores'].cpu().numpy()
+            labels = pred['labels'].cpu().numpy()
+            
+            # 임계값보다 높은 점수를 가진 예측만 필터링
+            mask = scores >= score_threshold
+            boxes = boxes[mask]
+            scores = scores[mask]
+            labels = labels[mask]
+            
+            # 복사본 만들기 (원본 유지를 위해)
+            img_draw = image.copy()
+            
+            # 객체별로 바운딩 박스 그리기
+            for box, score, label_idx in zip(boxes, scores, labels):
+                # 좌표 얻기
+                x1, y1, x2, y2 = map(int, box)
+                
+                # 클래스에 따라 색상 선택 (기본 색상은 파란색)
+                color = CLASS_COLORS.get(label_idx.item(), (255, 0, 0))
+                
+                # 클래스 이름 가져오기
+                label_name = classes[label_idx] if label_idx < len(classes) else f"Unknown({label_idx})"
+                
+                # 바운딩 박스 그리기
+                cv2.rectangle(img_draw, (x1, y1), (x2, y2), color, 2)
+                
+                # 텍스트 작성 (클래스 이름과 점수)
+                label_text = f"{label_name}: {score:.2f}"
+                cv2.putText(img_draw, label_text, (x1, y1 - 10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            
+            # 파일 저장
+            filename = os.path.join(save_dir, f'prediction_{timestamp}_{i+1}.jpg')
+            cv2.imwrite(filename, img_draw)
+            saved_files.append(filename)
+            
+            logger.info(f"예측 결과 이미지 저장 완료: {filename}")
+        
+        logger.info(f"총 {len(saved_files)}개의 예측 이미지 저장 완료")
+        return saved_files
+    
+    except Exception as e:
+        logger.error(f"예측 결과 시각화 중 오류 발생: {e}")
+        return []
