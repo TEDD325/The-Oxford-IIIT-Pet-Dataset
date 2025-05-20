@@ -25,7 +25,6 @@ def create_datasets(image_dir, trainval_list, test_list, xml_dir, classes, valid
         tuple: (train_dataset, valid_dataset, test_dataset) 형태의 데이터셋 튜플
     """
     # trainval_list가 단순 리스트인지 데이터프레임인지 확인
-    import pandas as pd
     
     if isinstance(trainval_list, pd.DataFrame):
         # 이미 데이터프레임인 경우, Species 열을 stratify로 사용

@@ -3,7 +3,8 @@
 # 모든 의존성 라이브러리 및 모듈 가져오기
 from imports import *
 from config import *
-from visualization import visualize_annotated_image, visualize_class_distribution, visualize_sample_images
+
+from visualization import visualize_annotated_image, visualize_class_distribution, visualize_sample_images, visualize_predictions
 
 # 데이터 및 모델 모듈 임포트
 from data_utils import load_data, load_annotations, extract_xml_files, print_data_size_info, analyze_class_distribution, create_trainval_test_list, AnnotatedImageDataset, TestDataset, create_dataset
@@ -154,7 +155,6 @@ def main():
         
         # 예측 결과 시각화 및 저장
         logger.info("예측 결과 시각화 시작...")
-        from visualization import visualize_predictions
         
         # 테스트 이미지 중 일부만 시각화 (기본 5개)
         prediction_files = visualize_predictions(

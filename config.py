@@ -127,6 +127,43 @@ def setup_device():
     else:
         device = torch.device("cpu")
         logger.info("CUDA 사용 불가. CPU 사용")
+    """OS에 따라 적절한 디바이스(GPU/CPU)를 설정
+    
+    Returns:
+        torch.device: 사용할 계산 디바이스
+    """
+    # 운영체제 확인
+    os_name = platform.system()
+    
+    if os_name == 'Darwin':  # macOS
+        # MPS 지원 확인 (Apple Silicon)
+        has_mps = torch.backends.mps.is_available()
+        logger.info(f"macOS - MPS 지원 여부: {has_mps}")
+        device = torch.device("mps" if has_mps else "cpu")
+    
+    elif os_name in ['Linux', 'Windows']:  # Linux 또는 Windows
+        # CUDA 지원 확인 (NVIDIA GPU)
+        has_cuda = torch.cuda.is_available()
+        logger.info(f"{os_name} - CUDA 지원 여부: {has_cuda}")
+        
+        if has_cuda:
+            # 사용 가능한 GPU 개수 확인
+            gpu_count = torch.cuda.device_count()
+            cuda_device = 0  # 기본적으로 첫 번째 GPU 사용
+            device = torch.device(f"cuda:{cuda_device}")
+            logger.info(f"사용 가능한 GPU 개수: {gpu_count}, 선택된 GPU: {cuda_device}")
+            
+            # GPU 정보 출력
+            for i in range(gpu_count):
+                gpu_name = torch.cuda.get_device_name(i)
+                logger.info(f"GPU {i}: {gpu_name}")
+        else:
+            device = torch.device("cpu")
+    
+    else:  # 기타 OS
+        logger.warning(f"지원되지 않는 OS: {os_name}, CPU 사용")
+        device = torch.device("cpu")
+    
     logger.info(f"선택된 장치: {device}")
     return device
 
