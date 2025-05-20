@@ -1,0 +1,3 @@
+kagglehub
+tqdm
+opencv-python
